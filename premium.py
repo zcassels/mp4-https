@@ -11,6 +11,10 @@ parser = argparse.ArgumentParser(prog='PremiumGettr', description='Downloads epi
 
 parser.add_argument('-n', '--name', required=True)
 parser.add_argument('-m', '--media-path', default="./")
+
+# series or movies
+parser.add_argument('-t', '--type', default=None)
+parser.add_argument('-y', '--year', default=None)
 parser.add_argument('-s', '--seasons')
 
 args = parser.parse_args()
@@ -49,67 +53,101 @@ query = {
     'q': search_term
 }
 res = requests.get(f'{base_url}/search/auto', params=query, headers=headers)
-search_res = res.json()
 
-if len(search_res) > 1:
-    raise Exception(f"Too many results for {search_term}")
+def filter_media(res, year, type):
+    if year is not None and year != res['year']:
+        return
+    if type is not None and type != res['link'].split("/")[1]:
+        pass
+    return res
+
+def download_media(curl_path, url, output_path):
+    curl_cmd = f"{curl_path} \"{url}\" -o {output_path}"
+    print(curl_cmd)
+    
+    os.system(curl_cmd)
+
+    # check if operation was successful
+    if os.path.exists(output_path):
+        print(f"Successfully Downloaded {output_path}")
+    else:
+        print(f"failed to Downloaded {output_path}!")
+
+search_res = [s for s in res.json() if filter_media(s, args.year, args.type)]
+
 if len(search_res) == 0:
     raise Exception(f"Could not find {search_term}")
+if len(search_res) > 1:
+    raise Exception("too many results, filter results")
 
-series_id = search_res[0]['id']
-series_title = search_res[0]['title']
-series_path = search_res[0]['link'].lower()
 
-res = requests.get(f'{base_url}{series_path}', headers=headers)
+id = search_res[0]['id']
+title = search_res[0]['title']
+link = search_res[0]['link'].lower()
+type = search_res[0]['link'].split("/")[1]
 
-session_info_page = BeautifulSoup(res.text, 'html.parser')
+if type == "movies":
+    
+    move_res = requests.get(f"https://premium.gd/movies/getMovieLink?id={id}&token={token}", headers=headers)
+    media_info = move_res.json()
+    dl_url = media_info['dl']
+    if 'dl_hd' in media_info:
+        dl_url = media_info['dl_hd']
+    file_name = dl_url.split("/")[-1].split("?")[0]
+    output_path = f"{media_path}/{file_name}"
 
-# write to file for debugging
-# with open("log.html", 'w') as http_log:
-#     http_log.write(session_info_page.prettify())
+    if os.path.exists(output_path):
+        print(f"{output_path} already exists")
+    else:
+        print(f"fetching {title} Movie {output_path}")
+        download_media(curl_path, dl_url, output_path)
 
-if session_info_page.find("input", id="remember-me"):
-    raise Exception("Got login page, could be a stale token?")
 
-season_list_items = [int(item['data-season']) for item in session_info_page.find("div", class_="tv-details-seasons").find_all("li")]
-filtered_seasons = [season for season in season_list_items if season_selection is None or season in season_selection]
 
-for season_num in filtered_seasons: 
-    res = requests.get(f'{base_url}/series/season?id={series_id}&s={season_num}&token={token}', headers=headers)
-    episodes = res.json()
-    for episode in episodes:
-        episode_num = int(episode['episode_number'])
-        # https://premium.gd/series/getTvLink?id=705&token=00cae1e781faadad4ab3fef30e0b15c4&s=0&e=177&oPid=&_=1699320564869
-        media_res = requests.get(f'https://premium.gd/series/getTvLink?id={series_id}&token={token}&s={season_num}&e={episode_num}', headers=headers)
+elif type == "series":
 
-        media_url = media_res.json()['jwplayer'][0]['file']
-        media_url = media_url.replace("http://sv1.", "http://sv2.")
-        # url = media_url.replace('trial1.premium.gd', 'sv2.premium.gd').replace("http:", "https:")
+    res = requests.get(f'{base_url}{link}', headers=headers)
 
-        file_name = media_url.split("/")[-1].split("?")[0]
-        title_path = series_title.replace(" ", "_")
-        output_dir = f"{media_path}{title_path}/session_{season_num}"
-        output_path = f"{output_dir}/{file_name}"
+    session_info_page = BeautifulSoup(res.text, 'html.parser')
 
-        if os.path.exists(output_path):
-            print(f"{output_path} already exists")
-            continue
+    # write to file for debugging
+    # with open("log.html", 'w') as http_log:
+    #     http_log.write(session_info_page.prettify())
 
-        os.makedirs(output_dir, exist_ok=True)
+    if session_info_page.find("input", id="remember-me"):
+        raise Exception("Got login page, could be a stale token?")
 
-        # http://sv2.premium.gd/tv/tt2861424/s0e177_720p.mp4?st=Ut4rWGJIU4KrRH6FWAmJig&e=1699311009&end=610
-        # https://sv1.premium.gd/tv/tt2861424/s0e177_720p.mp4?st=WHFiar1sfochyy-3GQx-gQ&e=1699311077&u=55844' -o somefile.mp4
+    season_list_items = [int(item['data-season']) for item in session_info_page.find("div", class_="tv-details-seasons").find_all("li")]
+    filtered_seasons = [season for season in season_list_items if season_selection is None or season in season_selection]
 
-        curl_cmd = f"{curl_path} \"{media_url}\" -o {output_path}"
-        print(curl_cmd)
-        print(f"fetching {series_title} Session {season_num} Ep {episode_num} {output_path}")
-        os.system(curl_cmd)
+    for season_num in filtered_seasons: 
+        res = requests.get(f'{base_url}/series/season?id={id}&s={season_num}&token={token}', headers=headers)
+        episodes = res.json()
+        for episode in episodes:
+            episode_num = int(episode['episode_number'])
+            # https://premium.gd/series/getTvLink?id=705&token=00cae1e781faadad4ab3fef30e0b15c4&s=0&e=177&oPid=&_=1699320564869
 
-        # check if operation was successful
-        if os.path.exists(output_path):
-            print(f"Successfully Downloaded {output_path}")
-        else:
-            print(f"failed to Downloaded {output_path}!")
+            media_res = requests.get(f'https://premium.gd/series/getTvLink?id={id}&token={token}&s={season_num}&e={episode_num}', headers=headers)
+            
+            media_info = media_res.json()
+            media_url = media_info['jwplayer'][0]['file']
+            dl_url = media_info['dl']
+            if 'dl_hd' in media_info:
+                dl_url = media_info['dl_hd']
+            
+            file_name = dl_url.split("/")[-1].split("?")[0]
+            title_path = title.replace(" ", "_")
+            output_dir = f"{media_path}{title_path}/session_{season_num}"
+            output_path = f"{output_dir}/{file_name}"
 
-        # https://sv1.premium.gd/ = Germany
-        # https://sv2.premium.gd/ = DC
+            if os.path.exists(output_path):
+                print(f"{output_path} already exists")
+                continue
+
+            os.makedirs(output_dir, exist_ok=True)
+
+            print(f"fetching {title} Session {season_num} Ep {episode_num} {output_path}")
+            download_media(curl_path, dl_url, output_path)
+else:
+    raise Exception(f"Unknown media type {type}")
+
