@@ -15,9 +15,13 @@ parser.add_argument('-s', '--seasons')
 
 args = parser.parse_args()
 
+curl_path = "curl"
+if os.name == "nt":
+    curl_path = "c:/WINDOWS/system32/curl"
+
 search_term = args.name
 if args.seasons is not None:
-    season_selection = args.seasons.split(",")
+    season_selection = [int(s) for s in args.seasons.split(",")]
 else:
     season_selection = None
 
@@ -38,7 +42,7 @@ base_url = 'https://premium.gd'
 
 # make season selection zero-based
 if season_selection:
-    season_selection = [selection-1 for selection in season_selection]
+    season_selection = [selection for selection in season_selection]
 
 # https://premium.gd/series
 query = {
@@ -77,26 +81,30 @@ for season_num in filtered_seasons:
         episode_num = int(episode['episode_number'])
         print(episode['episode_number'])
 
-        media_res = requests.get(f'https://premium.gd/series/getTvLink?id={series_id}&token={token}&s={season_num}&e={episode_num}')
+        # https://premium.gd/series/getTvLink?id=705&token=00cae1e781faadad4ab3fef30e0b15c4&s=0&e=177&oPid=&_=1699320564869
+        media_res = requests.get(f'https://premium.gd/series/getTvLink?id={series_id}&token={token}&s={season_num}&e={episode_num}', headers=headers)
 
         media_url = media_res.json()['jwplayer'][0]['file']
+        media_url = media_url.replace("http://sv1.", "http://sv2.")
         # url = media_url.replace('trial1.premium.gd', 'sv2.premium.gd').replace("http:", "https:")
 
         file_name = media_url.split("/")[-1].split("?")[0]
         title_path = series_title.replace(" ", "_")
-        output_path = f"{media_path}{title_path}/{file_name}"
+        output_dir = f"{media_path}{title_path}/session_{season_num}"
+        output_path = f"{output_dir}/{file_name}"
 
         if os.path.exists(output_path):
             print(f"{output_path} already exists")
             continue
 
-        os.makedirs(title_path, exist_ok=True)
+        os.makedirs(output_dir, exist_ok=True)
 
         # http://sv2.premium.gd/tv/tt2861424/s0e177_720p.mp4?st=Ut4rWGJIU4KrRH6FWAmJig&e=1699311009&end=610
         # https://sv1.premium.gd/tv/tt2861424/s0e177_720p.mp4?st=WHFiar1sfochyy-3GQx-gQ&e=1699311077&u=55844' -o somefile.mp4
 
-        curl_cmd = f"curl '{media_url}' -o {output_path}"
-        print(f"fetching {series_title} Session {season_num} Ep {episode_num+1} {output_path}")
+        curl_cmd = f"{curl_path} \"{media_url}\" -o {output_path}"
+        print(curl_cmd)
+        print(f"fetching {series_title} Session {season_num} Ep {episode_num} {output_path}")
         os.system(curl_cmd)
 
         # check if operation was successful
