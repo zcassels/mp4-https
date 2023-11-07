@@ -79,8 +79,6 @@ for season_num in filtered_seasons:
     episodes = res.json()
     for episode in episodes:
         episode_num = int(episode['episode_number'])
-        print(episode['episode_number'])
-
         # https://premium.gd/series/getTvLink?id=705&token=00cae1e781faadad4ab3fef30e0b15c4&s=0&e=177&oPid=&_=1699320564869
         media_res = requests.get(f'https://premium.gd/series/getTvLink?id={series_id}&token={token}&s={season_num}&e={episode_num}', headers=headers)
 
